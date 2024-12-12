@@ -1,0 +1,20 @@
+[
+  {
+    "id": "BP_1591",
+    "title": "Bretke Postil (BP1591)",
+    "description": "A 1000-page postil (collection of sermons and Bible commentaries) written in the Lithuanian language by Jonas Bretkūnas in 1591. It was designed for the purposes of Protestant priests serving Lithuanian communities in East Prussia (territory sometimes known as Lithuania Minor). It is one earliest works in Lithuanian that were not merely translations but also included original texts.",
+    "link": {
+      "user": "postime",
+      "repo": "BP_1591_TEI"
+    }
+  },
+  {
+    "id": "WP_1573",
+    "title": "Wolfenbüttel Postil (WP1573)",
+    "description": "An anonymously handwritten Lithuanian Lutheran work, which originated in the period between 1565 and 1573 – is a compilation based on at least ten Latin postils. This codex, consisting of sermons dedicated to an entire liturgic year, is the oldest Lithuanian coherent text which is not restricted only to the translations of a canonical text. ",
+    "link": {
+      "user": "postime",
+      "repo": "WP_1573_TEI"
+    }
+  }
+]
