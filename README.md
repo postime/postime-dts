@@ -1,6 +1,6 @@
 # PosTime API
 
-An API required for the [frontend](https://github.com/max-ionov/postil-time-machine-viewer)
+API required for the [frontend](https://github.com/max-ionov/postil-time-machine-viewer)
 
 ## Project Setup
 
@@ -12,12 +12,14 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-To deactivate the virtual environment, use `deactivate` command
+To deactivate the virtual environment:
+```bash
+deactivate
+```
 
 ## Starting the API for development
 
 ```bash
-source .venv/bin/activate
 python app.py
 ```
 
