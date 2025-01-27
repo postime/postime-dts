@@ -184,7 +184,16 @@ def get_sermon(source_id, sermon_id):
 @app.route(f"{API_PREFIX}/timeline")
 @app.route(f"{API_PREFIX}/timeline/")
 def get_timeline():
-    return open("timeline.json", "r").read()
+    with open("timeline.json", "r") as inp_file:
+        try:
+            data = json.load(inp_file)
+            return jsonify(data)
+        except FileNotFoundError:
+            logging.error("Timeline file not found")
+            abort(404)
+        except json.JSONDecodeError as e:
+            logging.error(f"Error parsing timeline: {e}")
+            abort(500)
 
 @app.route(f"{DTS_API_PREFIX}/collection")
 def get_collection():
