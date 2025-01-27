@@ -18,6 +18,7 @@ HOST = os.getenv("POSTIME_DTS_HOST", "0.0.0.0")
 PORT = os.getenv("POSTIME_DTS_PORT", 8080)
 
 GH_USER = os.getenv("POSTIME_GH_USER", "postime")
+GH_TOKEN = os.getenv("POSTIME_GH_TOKEN")
 
 API_CLIENT = os.getenv("POSTIME_API_CLIENT", "http://localhost:5173")
 API_PREFIX = os.getenv("POSTIME_API_PREFIX", "/api").rstrip("/")
@@ -25,6 +26,20 @@ DTS_API_PREFIX = os.getenv("POSTIME_DTS_API_PREFIX", "/api/dts").rstrip("/")
 
 SPECS = os.getenv("DTS_SPEC_URL",
                   "https://distributed-text-services.github.io/specifications/context/1-alpha1.json")
+
+def github_auth(token):
+    logging.info("Authenticating with GitHub...")
+    response = requests.get("https://api.github.com/octocat", headers={
+        "Authorization": f"Bearer {token}",
+        "X-GitHub-Api-Version": "2022-11-28",
+    })
+
+    logging.info(f"GitHub authentication status: {response.status_code}")
+
+    if response.status_code != 200:
+        logging.error(f"Error authenticating with GitHub: {response.text}")
+        return False
+    return True
 
 def filter_data(data, keys=None, keys_to_remove=None):
     if keys and keys_to_remove:
@@ -116,6 +131,10 @@ def load_data(path):
             })
 
     return result
+
+logging.basicConfig(level=logging.INFO)
+if GH_TOKEN:
+    github_auth(GH_TOKEN)
 
 data = load_data(DATA_PATH)
 data_index = {row['metadata']['id']: row for row in data}
