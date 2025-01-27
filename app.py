@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import os.path
 
 import requests
 import xml.etree.ElementTree as ET
@@ -19,8 +20,8 @@ PORT = os.getenv("POSTIME_DTS_PORT", 8080)
 GH_USER = os.getenv("POSTIME_GH_USER", "postime")
 
 API_CLIENT = os.getenv("POSTIME_API_CLIENT", "http://localhost:5173")
-API_PREFIX = os.getenv("POSTIME_API_PREFIX", "/api")
-DTS_API_PREFIX = os.getenv("POSTIME_DTS_API_PREFIX", "/api/dts")
+API_PREFIX = os.getenv("POSTIME_API_PREFIX", "/api").strip("/")
+DTS_API_PREFIX = os.getenv("POSTIME_DTS_API_PREFIX", "/api/dts").strip("/")
 
 SPECS = os.getenv("DTS_SPEC_URL",
                   "https://distributed-text-services.github.io/specifications/context/1-alpha1.json")
@@ -57,6 +58,26 @@ def parse_xml(url):
         'text': response.text
     }
 
+def load_toolbox(name):
+    morph_info = {}
+    with open(f"toolbox/{name}", "r") as inp_file:
+        values = {}
+        cur_id = None
+
+        for line in inp_file:
+            line = line.strip()
+            if not line.startswith('\\') or ' ' not in line:
+                if cur_id:
+                    morph_info[cur_id] = values.copy()
+                values.clear()
+                continue
+
+            marker, value = line.split(' ', 1)
+            if marker == '\\ref':
+                cur_id = value
+            values[marker] = value
+
+    return {'morph': morph_info}
 
 def load_source(user, repo):
     results = []
@@ -67,13 +88,13 @@ def load_source(user, repo):
         if not elem['name'].endswith('xml'):
             continue
 
+        morph_info = load_toolbox(elem['name'].replace('.xml', '.txt')) if os.path.exists(f"toolbox/{elem['name'].replace('.xml', '.txt')}") else {}
         xml_info = parse_xml(elem['download_url'])
         if xml_info:
             results.append({
                 'id': elem['name'],
-                'title': get_id_from_name(elem['name'], repo),
-                'info': parse_xml(elem['download_url'])
-            })
+                'title': get_id_from_name(elem['name'], repo)
+            } | parse_xml(elem['download_url']) | morph_info)
 
     return results
 
@@ -86,16 +107,18 @@ def load_data(path):
 
         for source in data:
             result.append({
-                'id': source['id'],
-                'title': source['title'],
-                'description': source['description'],
+                'metadata': {
+                    'id': source['id'],
+                    'title': source['title'],
+                    'description': source['description'],
+                },
                 'sermons': load_source('postime', source['id'].replace('_', ''))
             })
 
     return result
 
 data = load_data(DATA_PATH)
-data_index = {row['id']: row for row in data}
+data_index = {row['metadata']['id']: row for row in data}
 
 app = Flask(__name__)
 cors = CORS(app, resources={
@@ -118,16 +141,24 @@ def format_response_dts(data):
 
 
 @app.route(API_PREFIX)
+@app.route(f"{API_PREFIX}/")
 def index():
-    return jsonify([filter_data(source, keys=["id", "title", "description"]) for source in data])
+    return jsonify([source['metadata'] for source in data])
 
 @app.route(f"{API_PREFIX}/<string:source_id>")
+@app.route(f"{API_PREFIX}/<string:source_id>/")
 def get_source(source_id):
     if source_id not in data_index:
         abort(404)
-    return jsonify(data_index[source_id])
+    cur_source = data_index[source_id]
+
+    return jsonify({
+        'metadata': cur_source['metadata'],
+        'sermons': [filter_data(sermon, keys_to_remove=('text',)) for sermon in cur_source['sermons']]
+    })
 
 @app.route(f"{API_PREFIX}/<string:source_id>/<string:sermon_id>")
+@app.route(f"{API_PREFIX}/<string:source_id>/<string:sermon_id>/")
 def get_sermon(source_id, sermon_id):
     if source_id not in data_index:
         abort(404)
@@ -137,6 +168,11 @@ def get_sermon(source_id, sermon_id):
             return jsonify(sermon)
 
     abort(404)
+
+@app.route(f"{API_PREFIX}/timeline")
+@app.route(f"{API_PREFIX}/timeline/")
+def get_timeline():
+    return open("timeline.json", "r").read()
 
 @app.route(f"{DTS_API_PREFIX}/collection")
 def get_collection():
