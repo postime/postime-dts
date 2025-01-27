@@ -20,8 +20,8 @@ PORT = os.getenv("POSTIME_DTS_PORT", 8080)
 GH_USER = os.getenv("POSTIME_GH_USER", "postime")
 
 API_CLIENT = os.getenv("POSTIME_API_CLIENT", "http://localhost:5173")
-API_PREFIX = os.getenv("POSTIME_API_PREFIX", "/api").strip("/")
-DTS_API_PREFIX = os.getenv("POSTIME_DTS_API_PREFIX", "/api/dts").strip("/")
+API_PREFIX = os.getenv("POSTIME_API_PREFIX", "/api").rstrip("/")
+DTS_API_PREFIX = os.getenv("POSTIME_DTS_API_PREFIX", "/api/dts").rstrip("/")
 
 SPECS = os.getenv("DTS_SPEC_URL",
                   "https://distributed-text-services.github.io/specifications/context/1-alpha1.json")
