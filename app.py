@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import os.path
+import sys
 
 import requests
 import xml.etree.ElementTree as ET
@@ -26,20 +27,6 @@ DTS_API_PREFIX = os.getenv("POSTIME_DTS_API_PREFIX", "/api/dts").rstrip("/")
 
 SPECS = os.getenv("DTS_SPEC_URL",
                   "https://distributed-text-services.github.io/specifications/context/1-alpha1.json")
-
-def github_auth(token):
-    logging.info("Authenticating with GitHub...")
-    response = requests.get("https://api.github.com/octocat", headers={
-        "Authorization": f"Bearer {token}",
-        "X-GitHub-Api-Version": "2022-11-28",
-    })
-
-    logging.info(f"GitHub authentication status: {response.status_code}")
-
-    if response.status_code != 200:
-        logging.error(f"Error authenticating with GitHub: {response.text}")
-        return False
-    return True
 
 def filter_data(data, keys=None, keys_to_remove=None):
     if keys and keys_to_remove:
@@ -98,7 +85,15 @@ def load_source(user, repo):
     results = []
 
     gh_api_url = f"https://api.github.com/repos/{user}/{repo}-TEI/contents/"
-    response = requests.get(gh_api_url)
+    response = requests.get(gh_api_url, headers={
+        "Authorization": f"Bearer {GH_TOKEN}",
+        "X-GitHub-Api-Version": "2022-11-28",
+    } if GH_TOKEN else {})
+
+    if response.status_code != 200:
+        logging.error(f"Error loading sources: {response.status_code} {response.text}")
+        sys.exit(1)
+
     for elem in response.json():
         if not elem['name'].endswith('xml'):
             continue
@@ -133,8 +128,6 @@ def load_data(path):
     return result
 
 logging.basicConfig(level=logging.INFO)
-if GH_TOKEN:
-    github_auth(GH_TOKEN)
 
 data = load_data(DATA_PATH)
 data_index = {row['metadata']['id']: row for row in data}
