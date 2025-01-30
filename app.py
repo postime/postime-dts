@@ -3,6 +3,7 @@ import logging
 import os
 import os.path
 import sys
+from typing import TextIO
 
 import requests
 import xml.etree.ElementTree as ET
@@ -13,8 +14,6 @@ from dotenv import load_dotenv, find_dotenv
 
 load_dotenv(find_dotenv())
 
-DATA_PATH = os.getenv("POSTIME_DATA", "data.json")
-
 HOST = os.getenv("POSTIME_DTS_HOST", "0.0.0.0")
 PORT = os.getenv("POSTIME_DTS_PORT", 8080)
 
@@ -24,6 +23,9 @@ GH_TOKEN = os.getenv("POSTIME_GH_TOKEN")
 API_CLIENT = os.getenv("POSTIME_API_CLIENT", "http://localhost:5173")
 API_PREFIX = os.getenv("POSTIME_API_PREFIX", "/api").rstrip("/")
 DTS_API_PREFIX = os.getenv("POSTIME_DTS_API_PREFIX", "/api/dts").rstrip("/")
+
+DATA_PATH = os.getenv("POSTIME_DATA", "data.json")
+TOOLBOX_FILES = os.getenv("POSTIME_TOOLBOX_REPO", f"https://api.github.com/repos/{GH_USER}/postil-time-machine/contents/toolbox_PostilTimeMachine")
 
 SPECS = os.getenv("DTS_SPEC_URL",
                   "https://distributed-text-services.github.io/specifications/context/1-alpha1.json")
@@ -37,11 +39,20 @@ def filter_data(data, keys=None, keys_to_remove=None):
            or (keys_to_remove and key not in keys_to_remove)
     }
 
+def make_github_request(url):
+    response = requests.get(url, headers={
+        "Authorization": f"Bearer {GH_TOKEN}",
+        "X-GitHub-Api-Version": "2022-11-28",
+    } if GH_TOKEN else None)
+
+    return response
+
 def get_id_from_name(name, prefix):
     return name.removesuffix('.xml').replace(f"prefix_", "").replace('_', ' ')
 
 def parse_xml(url):
     root = None
+    response = None
 
     try:
         response = requests.get(url)
@@ -57,40 +68,53 @@ def parse_xml(url):
     return {
         'firstPage': pages[0].attrib['n'] if len(pages) else None,
         'lastPage': pages[-1].attrib['n'] if len(pages) else None,
-        'text': response.text
+        'text': response.text if response else None,
     }
 
-def load_toolbox(name):
+def load_toolbox(url):
+    if not url:
+        return {}
+
+    try:
+        response = make_github_request(url)
+        lines = response.text.splitlines()
+    except requests.RequestException as e:
+        logging.error(f"Error fetching file {url}: {e}")
+        return {}
+
     morph_info = {}
-    with open(f"toolbox/{name}", "r") as inp_file:
-        values = {}
-        cur_id = None
+    values = {}
+    cur_id = None
 
-        for line in inp_file:
-            line = line.strip()
-            if not line.startswith('\\') or ' ' not in line:
-                if cur_id:
-                    morph_info[cur_id] = values.copy()
-                values.clear()
-                continue
+    for line in lines:
+        line = line.strip()
+        if not line.startswith('\\') or ' ' not in line:
+            if cur_id:
+                morph_info[cur_id] = values.copy()
+            values.clear()
+            continue
 
-            marker, value = line.split(' ', 1)
-            if marker == '\\ref':
-                cur_id = value
-            values[marker] = value
+        marker, value = line.split(' ', 1)
+        if marker == '\\ref':
+            cur_id = value
+        values[marker] = value
 
     return {'morph': morph_info}
 
-def load_source(user, repo):
+def get_toolbox_filenames(gh_api_url: str):
+    response = make_github_request(gh_api_url)
+    if response and response.status_code != 200:
+        return {}
+
+    return { row['name']: row['download_url'] for row in response.json() }
+
+def load_source(user: str, repo: str):
     results = []
+    toolbox_files_urls = get_toolbox_filenames(TOOLBOX_FILES)
 
-    gh_api_url = f"https://api.github.com/repos/{user}/{repo}-TEI/contents/"
-    response = requests.get(gh_api_url, headers={
-        "Authorization": f"Bearer {GH_TOKEN}",
-        "X-GitHub-Api-Version": "2022-11-28",
-    } if GH_TOKEN else {})
+    response = make_github_request(f"https://api.github.com/repos/{user}/{repo}-TEI/contents/")
 
-    if response.status_code != 200:
+    if response and response.status_code != 200:
         logging.error(f"Error loading sources: {response.status_code} {response.text}")
         sys.exit(1)
 
@@ -98,13 +122,18 @@ def load_source(user, repo):
         if not elem['name'].endswith('xml'):
             continue
 
-        morph_info = load_toolbox(elem['name'].replace('.xml', '.txt')) if os.path.exists(f"toolbox/{elem['name'].replace('.xml', '.txt')}") else {}
+        morph_info = load_toolbox(toolbox_files_urls.get(elem['name'].replace('.xml', '.txt')))
         xml_info = parse_xml(elem['download_url'])
         if xml_info:
             results.append({
-                'id': elem['name'],
+                'id': elem['name'].replace('.xml', ''),
                 'title': get_id_from_name(elem['name'], repo)
-            } | parse_xml(elem['download_url']) | morph_info)
+            } | xml_info | morph_info)
+
+        if not morph_info:
+            logging.warning(f"No morph info for {elem['name']}")
+        if not xml_info:
+            logging.warning(f"No XML info for {elem['name']}")
 
     return results
 
@@ -166,7 +195,7 @@ def get_source(source_id):
 
     return jsonify({
         'metadata': cur_source['metadata'],
-        'sermons': [filter_data(sermon, keys_to_remove=('text',)) for sermon in cur_source['sermons']]
+        'sermons': [filter_data(sermon, keys_to_remove=('text', 'morph')) for sermon in cur_source['sermons']]
     })
 
 @app.route(f"{API_PREFIX}/<string:source_id>/<string:sermon_id>")
