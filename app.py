@@ -1,6 +1,6 @@
 import json
+import re
 import logging
-import os
 import os.path
 import sys
 from typing import TextIO
@@ -86,18 +86,31 @@ def load_toolbox(url):
     values = {}
     cur_id = None
 
+    rx_line = re.compile(r"\\(?P<marker>[^ ]+) (?P<value>.*?)(\s+[# ]+(?P<note>.*))?$")
+
     for line in lines:
         line = line.strip()
         if not line.startswith('\\') or ' ' not in line:
             if cur_id:
+                # change IDs to remove dashes for lines that have word breaks
+                if '-' in cur_id:
+                    cur_id = cur_id[:cur_id.rindex('-')]
                 morph_info[cur_id] = values.copy()
             values.clear()
             continue
 
-        marker, value = line.split(' ', 1)
-        if marker == '\\ref':
+        match = rx_line.match(line)
+        if not match:
+            logging.error(f"Cannot parse line {line}")
+            continue
+
+        marker, value, _, note = match.groups()
+        if marker == 'ref':
             cur_id = value
         values[marker] = value
+
+        if note:
+            values["note"] = note.strip()
 
     return {'morph': morph_info}
 
@@ -123,6 +136,8 @@ def load_source(user: str, repo: str):
             continue
 
         morph_info = load_toolbox(toolbox_files_urls.get(elem['name'].replace('.xml', '.txt')))
+        # we should probably keep the data as XML or immediately add morph data there
+        # at the same time, we should extract quotes and critical apparatus here and return it as JSON
         xml_info = parse_xml(elem['download_url'])
         if xml_info:
             results.append({
