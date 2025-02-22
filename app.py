@@ -86,7 +86,7 @@ def load_toolbox(url):
     values = {}
     cur_id = None
 
-    rx_line = re.compile(r"\\(?P<marker>[^ ]+) (?P<value>.*?)(\s+[# ]+(?P<note>.*))?$")
+    rx_line = re.compile(r"\\(?P<marker>[^ ]+) (?P<value>.*?)\s*(#[# ]+(?P<note>.*))?$")
 
     for line in lines:
         line = line.strip()
