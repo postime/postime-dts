@@ -48,7 +48,7 @@ def make_github_request(url):
     return response
 
 def get_id_from_name(name, prefix):
-    return name.removesuffix('.xml').replace(f"prefix_", "").replace('_', ' ')
+    return name.removesuffix('.xml').replace(f"{prefix}_", "").replace('_', ' ')
 
 def parse_xml(url):
     root = None
@@ -106,6 +106,8 @@ def load_toolbox(url):
 
         marker, value, _, note = match.groups()
         if marker == 'ref':
+            # Fix a BP and WP inconsistency with ID naming in toolbox
+            value = value.replace(',', '_')
             cur_id = value
         values[marker] = value
 
