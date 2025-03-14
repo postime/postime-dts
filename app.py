@@ -3,7 +3,6 @@ import re
 import logging
 import os.path
 import sys
-from typing import TextIO
 
 import requests
 import xml.etree.ElementTree as ET
@@ -50,7 +49,40 @@ def make_github_request(url):
 def get_id_from_name(name, prefix):
     return name.removesuffix('.xml').replace(f"{prefix}_", "").replace('_', ' ')
 
-def parse_xml(url):
+def qname(name, ns):
+    return f"{{{ns}}}{name}"
+
+def add_morph_to_xml(root, morph):
+    xml_ns = "http://www.w3.org/XML/1998/namespace"
+    tei_ns = "http://www.tei-c.org/ns/1.0"
+
+    ET.register_namespace("", tei_ns)
+    ET.register_namespace("xml", xml_ns)
+
+    if not root:
+        return ""
+
+    if not morph:
+        return ET.tostring(root, encoding="unicode")
+
+    for word in root.findall(f".//{qname('w', tei_ns)}"):
+        if not word.attrib.get(qname('id', xml_ns)) or "#" not in word.attrib[qname('id', xml_ns)]:
+            logging.warning(f"Word token does not have an ID element or it is malformed: {word}. Skipping")
+            continue
+        line_id, word_id = word.attrib[qname('id', xml_ns)].split("#", 1)
+        if line_id in morph:
+            fs_elem = ET.Element(qname('fs', tei_ns), attrib={qname('type', tei_ns): "morphology"})
+            for key, val in morph[line_id].items():
+                f_elem = ET.SubElement(fs_elem, qname('f', tei_ns), attrib={qname('type', tei_ns): key})
+                tokens = re.split(r'\s+', val)
+                if len(tokens) > int(word_id)-1:
+                    logging.warning(f"Number of tokens mismatch between TEI and Toolbox: {line_id}")
+                f_elem.text = tokens[int(word_id)-1] if len(tokens) > int(word_id)-1 else "???"
+            word.append(fs_elem)
+
+    return ET.tostring(root, encoding="unicode")
+
+def parse_xml(url, morph=None):
     root = None
     response = None
 
@@ -62,13 +94,16 @@ def parse_xml(url):
         return None
     except ET.ParseError as e:
         logging.error(f"Error parsing file {url}: {e}")
+        return None  # we cannot proceed here since we need to add info to the parsed XML
 
     pages = root.findall(".//{http://www.tei-c.org/ns/1.0}pb") if root else []
+
+    xml_text = add_morph_to_xml(root, morph)
 
     return {
         'firstPage': pages[0].attrib['n'] if len(pages) else None,
         'lastPage': pages[-1].attrib['n'] if len(pages) else None,
-        'text': response.text if response else None,
+        'text': xml_text,
     }
 
 def load_toolbox(url):
@@ -106,15 +141,16 @@ def load_toolbox(url):
 
         marker, value, _, note = match.groups()
         if marker == 'ref':
-            # Fix a BP and WP inconsistency with ID naming in toolbox
+            # Fixes a BP and WP inconsistency with ID naming in toolbox
             value = value.replace(',', '_')
             cur_id = value
-        values[marker] = value
+        else:
+            values[marker] = value
 
         if note:
             values["note"] = note.strip()
 
-    return {'morph': morph_info}
+    return morph_info
 
 def get_toolbox_filenames(gh_api_url: str):
     response = make_github_request(gh_api_url)
@@ -138,14 +174,19 @@ def load_source(user: str, repo: str):
             continue
 
         morph_info = load_toolbox(toolbox_files_urls.get(elem['name'].replace('.xml', '.txt')))
-        # we should probably keep the data as XML or immediately add morph data there
-        # at the same time, we should extract quotes and critical apparatus here and return it as JSON
-        xml_info = parse_xml(elem['download_url'])
+        # TODO: we should inject morph data to TEI-XML here, but I won't do it now since so many XML files are invalid
+        # Morph, quotes and critical apparatus will be extracted by the frontend
+        # This sounds bad and ineffective but
+        #   (a) this makes it compatible with DTS,
+        #   (b) we can abandon the backend and just serve static TEI-XML with all the data included (minimal computing)
+        #   (c) this makes the frontend agnostic of what sources and in what formats we use on the backend,
+        #       the frontend only cares about TEI.
+        xml_info = parse_xml(elem['download_url'], morph_info)
         if xml_info:
             results.append({
                 'id': elem['name'].replace('.xml', ''),
                 'title': get_id_from_name(elem['name'], repo)
-            } | xml_info | morph_info)
+            } | xml_info)
 
         if not morph_info:
             logging.warning(f"No morph info for {elem['name']}")
